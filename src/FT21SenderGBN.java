@@ -72,9 +72,10 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
             if (!window.isEmpty() && (now - window.getFirst().timestamp) > TIMEOUT) {
                 PacketProxy packetProxy = window.getFirst();
                 window.clear();
+                packetProxy.timestamp = now;
                 window.addLast(packetProxy);
                 super.sendPacket(now, RECEIVER, packetProxy.packet);
-                if (packetProxy.id == lastPacketSeqN + 1) {
+                if (packetProxy.id == lastPacketSeqN) {
                     state = State.FINISHING;
                 }
                 else {state = State.UPLOADING;}
@@ -99,7 +100,7 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
                 packetProxy = new PacketProxy(nextId,readDataPacket(file, nextId), now);
                 window.addLast(packetProxy);
                 super.sendPacket(now, RECEIVER, packetProxy.packet);
-                if(nextId > lastPacketSeqN) {
+                if(nextId == lastPacketSeqN) {
                     state = State.FINISHING;
                 }
                 break;
@@ -122,15 +123,20 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
             case UPLOADING:
                 if(ack.cSeqN == window.getFirst().id)
                     window.poll();
+                else if (ack.cSeqN > window.getFirst().id)
+                    window.poll();
                 break;
             case FINISHING:
-                super.log(now, "All Done. Transfer complete...");
-                super.printReport(now);
                 if(ack.cSeqN == window.getFirst().id) {
                     window.poll();
-                    if(ack.cSeqN == lastPacketSeqN + 1)
-                       state = State.FINISHED;
-                }
+                    if(ack.cSeqN == lastPacketSeqN + 1) {
+                        super.log(now, "All Done. Transfer complete...");
+                        super.printReport(now);
+                        state = State.FINISHED;
+                    }
+
+                } else if (ack.cSeqN > window.getFirst().id)
+                    window.poll();
                 break;
             case FINISHED:
         }
