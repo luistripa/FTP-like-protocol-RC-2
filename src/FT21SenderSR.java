@@ -3,20 +3,23 @@ import ft21.*;
 
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 
 public class FT21SenderSR extends FT21AbstractSenderApplication {
 
     static class PacketProxy {
 
-        int id;
         FT21Packet packet;
+        int id;
         int timestamp;
+        boolean acknowledge;
 
         public PacketProxy(int id, FT21Packet packet, int timestamp) {
             this.id = id;
             this.packet = packet;
             this.timestamp = timestamp;
+            this.acknowledge = false;
         }
 
         @Override
@@ -42,7 +45,7 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
     private File file;
     private RandomAccessFile raf;
     private int BlockSize;
-    private int nextPacketSeqN, lastPacketSeqN;
+    private int lastPacketSeqN;
     private int maxWindowSize;
 
     private State state;
@@ -71,9 +74,7 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
         if (state != State.FINISHED) {
             if (!window.isEmpty() && (now - window.getFirst().timestamp) > TIMEOUT) {
                 PacketProxy packetProxy = window.getFirst();
-                window.clear();
                 packetProxy.timestamp = now;
-                window.addLast(packetProxy);
                 super.sendPacket(now, RECEIVER, packetProxy.packet);
                 if (packetProxy.id == lastPacketSeqN) {
                     state = State.FINISHING;
@@ -117,26 +118,28 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
 
     @Override
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
+        super.log(now, "Received ACK: "+ack);
         switch (state) {
             case BEGINNING:
                 break;
             case UPLOADING:
-                if(ack.cSeqN == window.getFirst().id)
+                int x = ack.cSeqN - window.getFirst().id;
+                window.get(x).acknowledge = true;
+                while(!window.isEmpty() && window.getFirst().acknowledge) {
                     window.poll();
-                else if (ack.cSeqN > window.getFirst().id)
-                    window.poll();
+                }
                 break;
             case FINISHING:
-                if(ack.cSeqN == window.getFirst().id) {
+                x = ack.cSeqN - window.getFirst().id;
+                window.get(x).acknowledge = true;
+                while(!window.isEmpty() && window.getFirst().acknowledge) {
                     window.poll();
-                    if(ack.cSeqN == lastPacketSeqN + 1) {
-                        super.log(now, "All Done. Transfer complete...");
-                        super.printReport(now);
-                        state = State.FINISHED;
-                    }
-
-                } else if (ack.cSeqN > window.getFirst().id)
-                    window.poll();
+                }
+                if(ack.cSeqN == lastPacketSeqN + 1) {
+                    state = State.FINISHED;
+                    super.log(now, "All Done. Transfer complete...");
+                    super.printReport(now);
+                }
                 break;
             case FINISHED:
         }

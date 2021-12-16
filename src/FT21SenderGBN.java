@@ -42,7 +42,7 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
     private File file;
     private RandomAccessFile raf;
     private int BlockSize;
-    private int nextPacketSeqN, lastPacketSeqN;
+    private int lastPacketSeqN;
     private int maxWindowSize;
 
     private State state;
