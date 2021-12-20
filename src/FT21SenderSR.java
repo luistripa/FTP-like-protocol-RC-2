@@ -3,6 +3,7 @@ import ft21.*;
 
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 
@@ -13,19 +14,22 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
         FT21Packet packet;
         int id;
         int timestamp;
+        boolean acknowledged;
 
         public PacketProxy(int id, FT21Packet packet, int timestamp) {
             this.id = id;
             this.packet = packet;
             this.timestamp = timestamp;
+            this.acknowledged = false;
         }
 
         @Override
         public String toString() {
             return "PacketProxy{" +
-                    "id=" + id +
-                    ", packet=" + packet +
+                    "packet=" + packet +
+                    ", id=" + id +
                     ", timestamp=" + timestamp +
+                    ", acknowledged=" + acknowledged +
                     '}';
         }
     }
@@ -71,13 +75,20 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
 
     public void on_clock_tick(int now) {
         if (state != State.FINISHED) {
-            if (!window.isEmpty() && (now - window.getFirst().timestamp) > TIMEOUT) {
-                PacketProxy packetProxy = window.getFirst();
-                packetProxy.timestamp = now;
-                super.sendPacket(now, RECEIVER, packetProxy.packet);
-
-            } else if (window.size() < maxWindowSize)
+            boolean timedout = false;
+            for (PacketProxy p : window) {
+                if (p.acknowledged)
+                    continue;
+                if (now - p.timestamp > TIMEOUT) {
+                    p.timestamp = now;
+                    super.sendPacket(now, RECEIVER, p.packet);
+                    timedout = true;
+                    break;
+                }
+            }
+            if (!timedout && window.size() < maxWindowSize) {
                 sendNextPacket(now);
+            }
         }
     }
 
@@ -114,18 +125,28 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
 
     @Override
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
+        super.log(now, ack.toString());
         switch (state) {
             case BEGINNING:
                 window.poll();
                 state = State.UPLOADING;
+                break;
+
             case UPLOADING:
                 if (ack.cSeqN == lastPacketSeqN) {
-                    window.poll();
+                    this.window.clear();
                     state = State.FINISHING;
+
+                } else if (ack.cSeqN >= window.getFirst().id) {
+                    while (!window.isEmpty() && (window.getFirst().id <= ack.cSeqN || window.getFirst().acknowledged))
+                        window.poll();
+
+                } else if (windowContains(ack.packetID) && !ack.outsideWindow) {
+                    PacketProxy packetProxy = getPacket(ack.packetID);
+                    packetProxy.acknowledged = true;
                 }
-                while (!window.isEmpty() && ack.cSeqN >= window.getFirst().id)
-                    window.poll();
                 break;
+
             case FINISHING:
                 if(ack.cSeqN == lastPacketSeqN + 1) {
                     window.poll();
@@ -134,11 +155,24 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
                     super.printReport(now);
                 }
                 break;
+
             case FINISHED:
         }
     }
 
-    private FT21_DataPacket readDataPacket(File file, int seqN) {
+    private PacketProxy getPacket(int packetID) {
+        PacketProxy first = window.getFirst();
+        int x = packetID - first.id;
+        return window.get(x);
+    }
+
+    private boolean windowContains(int packetID) {
+        PacketProxy last = window.getLast();
+        PacketProxy first = window.getFirst();
+        return packetID <= last.id && packetID >= first.id;
+    }
+
+    private FT21_DataPacket2 readDataPacket(File file, int seqN) {
         try {
             if (raf == null)
                 raf = new RandomAccessFile(file, "r");
@@ -146,7 +180,7 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
             raf.seek(BlockSize * (seqN - 1));
             byte[] data = new byte[BlockSize];
             int nbytes = raf.read(data);
-            return new FT21_DataPacket(seqN, data, nbytes);
+            return new FT21_DataPacket2(seqN, data, nbytes);
         } catch (Exception x) {
             throw new Error("Fatal Error: " + x.getMessage());
         }
