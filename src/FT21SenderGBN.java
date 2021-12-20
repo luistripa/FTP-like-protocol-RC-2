@@ -87,24 +87,29 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
         PacketProxy packetProxy;
         switch (state) {
             case BEGINNING:
-                packetProxy = new PacketProxy(0,new FT21_UploadPacket(file.getName()), now);
-                window.addLast(packetProxy);
-                super.sendPacket(now, RECEIVER, packetProxy.packet);
-                break;
-            case UPLOADING:
-                if(nextPacketSeqN < lastPacketSeqN) {
+                if (nextPacketSeqN == 0) {
+                    packetProxy = new PacketProxy(0, new FT21_UploadPacket(file.getName()), now);
+                    window.addLast(packetProxy);
+                    super.sendPacket(now, RECEIVER, packetProxy.packet);
                     nextPacketSeqN++;
+                }
+                break;
+
+            case UPLOADING:
+                if(nextPacketSeqN <= lastPacketSeqN) {
                     packetProxy = new PacketProxy(nextPacketSeqN,readDataPacket(file, nextPacketSeqN), now);
                     window.addLast(packetProxy);
                     super.sendPacket(now, RECEIVER, packetProxy.packet);
+                    nextPacketSeqN++;
                 }
                 break;
+
             case FINISHING:
-                if (nextPacketSeqN < lastPacketSeqN+1) {
-                    nextPacketSeqN++;
+                if (nextPacketSeqN == lastPacketSeqN+1) {
                     packetProxy = new PacketProxy(nextPacketSeqN, new FT21_FinPacket(nextPacketSeqN), now);
                     window.addLast(packetProxy);
                     super.sendPacket(now, RECEIVER, packetProxy.packet);
+                    nextPacketSeqN++;
                 }
                 break;
             case FINISHED:
