@@ -42,7 +42,7 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
     private File file;
     private RandomAccessFile raf;
     private int BlockSize;
-    private int lastPacketSeqN;
+    private int nextPacketSeqN, lastPacketSeqN;
     private int maxWindowSize;
 
     private State state;
@@ -61,6 +61,7 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
         maxWindowSize = Integer.parseInt(args[2]);
 
         state = State.BEGINNING;
+        nextPacketSeqN = 0;
         lastPacketSeqN = (int) Math.ceil(file.length() / (double) BlockSize);
 
         window = new LinkedList<>();
@@ -75,14 +76,10 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
                 packetProxy.timestamp = now;
                 window.addLast(packetProxy);
                 super.sendPacket(now, RECEIVER, packetProxy.packet);
-                if (packetProxy.id == lastPacketSeqN) {
-                    state = State.FINISHING;
-                }
-                else {state = State.UPLOADING;}
-            }
-            else if (window.size() < maxWindowSize) {
+                nextPacketSeqN = packetProxy.id;
+
+            } else if (window.size() < maxWindowSize)
                 sendNextPacket(now);
-            }
         }
     }
 
@@ -93,20 +90,19 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
                 packetProxy = new PacketProxy(0,new FT21_UploadPacket(file.getName()), now);
                 window.addLast(packetProxy);
                 super.sendPacket(now, RECEIVER, packetProxy.packet);
-                state = State.UPLOADING;
                 break;
             case UPLOADING:
-                int nextId = window.getLast().id + 1;
-                packetProxy = new PacketProxy(nextId,readDataPacket(file, nextId), now);
-                window.addLast(packetProxy);
-                super.sendPacket(now, RECEIVER, packetProxy.packet);
-                if(nextId == lastPacketSeqN) {
-                    state = State.FINISHING;
+                if(nextPacketSeqN < lastPacketSeqN) {
+                    nextPacketSeqN++;
+                    packetProxy = new PacketProxy(nextPacketSeqN,readDataPacket(file, nextPacketSeqN), now);
+                    window.addLast(packetProxy);
+                    super.sendPacket(now, RECEIVER, packetProxy.packet);
                 }
                 break;
             case FINISHING:
-                if (window.isEmpty()) {
-                    packetProxy = new PacketProxy(lastPacketSeqN + 1, new FT21_FinPacket(lastPacketSeqN + 1), now);
+                if (nextPacketSeqN < lastPacketSeqN+1) {
+                    nextPacketSeqN++;
+                    packetProxy = new PacketProxy(nextPacketSeqN, new FT21_FinPacket(nextPacketSeqN), now);
                     window.addLast(packetProxy);
                     super.sendPacket(now, RECEIVER, packetProxy.packet);
                 }
@@ -119,24 +115,22 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
         switch (state) {
             case BEGINNING:
+                state = State.UPLOADING;
+                window.poll();
                 break;
             case UPLOADING:
-                if(ack.cSeqN == window.getFirst().id)
+                if(ack.cSeqN == window.getFirst().id || ack.cSeqN > window.getFirst().id)
                     window.poll();
-                else if (ack.cSeqN > window.getFirst().id)
-                    window.poll();
+                if (ack.cSeqN == lastPacketSeqN)
+                    state = State.FINISHING;
                 break;
             case FINISHING:
-                if(ack.cSeqN == window.getFirst().id) {
+                if (ack.cSeqN == lastPacketSeqN+1) {
                     window.poll();
-                    if(ack.cSeqN == lastPacketSeqN + 1) {
-                        super.log(now, "All Done. Transfer complete...");
-                        super.printReport(now);
-                        state = State.FINISHED;
-                    }
-
-                } else if (ack.cSeqN > window.getFirst().id)
-                    window.poll();
+                    super.log(now, "All Done. Transfer complete...");
+                    super.printReport(now);
+                    state = State.FINISHED;
+                }
                 break;
             case FINISHED:
         }
