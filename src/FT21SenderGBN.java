@@ -71,16 +71,22 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
     public void on_clock_tick(int now) {
         if (state != State.FINISHED) {
             if (!window.isEmpty() && (now - window.getFirst().timestamp) > TIMEOUT) {
-                PacketProxy packetProxy = window.getFirst();
-                window.clear();
-                packetProxy.timestamp = now;
-                window.addLast(packetProxy);
-                super.sendPacket(now, RECEIVER, packetProxy.packet);
-                nextPacketSeqN = packetProxy.id;
+                this.on_timeout(now);
 
             } else if (window.size() < maxWindowSize)
                 sendNextPacket(now);
         }
+    }
+
+    @Override
+    public void on_timeout(int now) {
+        super.on_timeout(now);
+        PacketProxy packetProxy = window.getFirst();
+        window.clear();
+        packetProxy.timestamp = now;
+        window.addLast(packetProxy);
+        super.sendPacket(now, RECEIVER, packetProxy.packet);
+        nextPacketSeqN = packetProxy.id+1;
     }
 
     private void sendNextPacket(int now) {

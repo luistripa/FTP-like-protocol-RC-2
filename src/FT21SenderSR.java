@@ -77,9 +77,10 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
         if (state != State.FINISHED) {
             boolean timedout = false;
             for (PacketProxy p : window) {
-                if (p.acknowledged)
+                if (p.acknowledged) // Ignore already acknowledged packets
                     continue;
-                if (now - p.timestamp > TIMEOUT) {
+                if (now - p.timestamp > TIMEOUT) { // When packet enters TIMEOUT
+                    this.on_timeout(now); // Used for statistics only
                     p.timestamp = now;
                     super.sendPacket(now, RECEIVER, p.packet);
                     timedout = true;
@@ -125,7 +126,7 @@ public class FT21SenderSR extends FT21AbstractSenderApplication {
 
     @Override
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
-        super.log(now, ack.toString());
+        super.logPacket(now, ack);
         switch (state) {
             case BEGINNING:
                 window.poll();
