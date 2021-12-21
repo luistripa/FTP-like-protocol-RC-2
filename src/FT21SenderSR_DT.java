@@ -47,7 +47,7 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     private int nextPacketSeqN, lastPacketSeqN;
     private int maxWindowSize;
     private int timeout;
-    private int maxTimeout, minTimeout;
+    private int totalRTT, rttSamples, totalJitter;
 
     private State state;
     private LinkedList<PacketProxy> window;
@@ -130,8 +130,12 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
         super.logPacket(now, ack);
         int rtt = now - ack.time;
         super.tallyRTT(rtt);
+        totalRTT+=rtt;
+        rttSamples++;
+        int jitter = (int) Math.abs( Math.round((double)totalRTT/rttSamples) - rtt );
+        totalJitter += jitter;
+        timeout = (int) (Math.round((double)totalRTT/rttSamples) + Math.round((double)totalJitter/rttSamples)/2); // Average RTT plus averageJitter/2
         super.tallyTimeout(timeout);
-        timeout = rtt;
 
         switch (state) {
             case BEGINNING:
