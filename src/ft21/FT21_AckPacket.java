@@ -7,6 +7,7 @@ public class FT21_AckPacket extends FT21Packet {
 	public final int cSeqN;
 	public final boolean outsideWindow;
 	public int packetID;
+	public int time;
 	
 	FT21_AckPacket(byte[] bytes) {
 		super( bytes );
@@ -21,6 +22,11 @@ public class FT21_AckPacket extends FT21Packet {
 		}
 
 		// decode optional fields here...
+		try {
+			this.time = super.getInt();
+		} catch (BufferUnderflowException e) {
+			this.time = 0;
+		}
 	}
 
 	public String toString() {
