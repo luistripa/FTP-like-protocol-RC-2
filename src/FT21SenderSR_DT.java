@@ -8,6 +8,12 @@ import java.util.LinkedList;
 
 public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
 
+    /**
+     * Represents a packet on the sender side.
+     *
+     * This class assists packet handling, by storing the packet itself, its ID,
+     * the timestamp of when it was sent and if it's already acknowledged or not.
+     */
     static class PacketProxy {
 
         FT21Packet packet;
@@ -40,6 +46,9 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     };
 
     static int DEFAULT_TIMEOUT = 1000;
+    static int DEFAULT_RTT_VARIATION = 5;
+    static double ALPHA = 0.125;
+    static double BETA = 0.25;
 
     private File file;
     private RandomAccessFile raf;
@@ -47,7 +56,8 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     private int nextPacketSeqN, lastPacketSeqN;
     private int maxWindowSize;
     private int timeout;
-    private int totalRTT, rttSamples, totalJitter;
+    private int estimatedRTT;
+    private int devRTT = 0;
 
     private State state;
     private LinkedList<PacketProxy> window;
@@ -80,9 +90,7 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
                 if (p.acknowledged) // Ignore already acknowledged packets
                     continue;
                 if (now - p.timestamp > timeout) { // When packet enters TIMEOUT
-                    this.on_timeout(now); // Used for statistics only
-                    p.timestamp = now;
-                    super.sendPacket(now, RECEIVER, p.packet);
+                    this.on_timeout(now, p);
                     timedout = true;
                     break;
                 }
@@ -91,6 +99,23 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
                 sendNextPacket(now);
             }
         }
+        if (now > 3000 && false)
+            System.out.println("yau");
+    }
+
+    public void on_timeout(int now, PacketProxy p) {
+        p.timestamp = now;
+        if (p.packet instanceof FT21_UploadPacket3) {
+            p.packet = new FT21_UploadPacket3(file.getName(), p.id, p.timestamp);
+
+        } else if (p.packet instanceof FT21_DataPacket3) {
+            p.packet = readDataPacket(file, p.id, now);
+
+        } else if (p.packet instanceof FT21_FinPacket3) {
+            p.packet = new FT21_FinPacket3(p.id, lastPacketSeqN+1, now);
+        }
+        super.sendPacket(now, RECEIVER, p.packet);
+        super.on_timeout(now);
     }
 
     private void sendNextPacket(int now) {
@@ -128,13 +153,20 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     @Override
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
         super.logPacket(now, ack);
-        int rtt = now - ack.time;
-        super.tallyRTT(rtt);
-        totalRTT+=rtt;
-        rttSamples++;
-        int jitter = (int) Math.abs( Math.round((double)totalRTT/rttSamples) - rtt );
-        totalJitter += jitter;
-        timeout = (int) (Math.round((double)totalRTT/rttSamples) + Math.round((double)totalJitter/rttSamples)/2); // Average RTT plus averageJitter/2
+        int sampledRTT = now - ack.time;
+
+
+        // Algorith given by professors in class T22
+        if (estimatedRTT == 0) { // Use default values on first packet
+            estimatedRTT = sampledRTT;
+            devRTT = DEFAULT_RTT_VARIATION;
+        } else {
+            estimatedRTT = (int) (estimatedRTT*(1-ALPHA) + ALPHA*sampledRTT);
+            devRTT = (int) ( (1-BETA)*devRTT + BETA*Math.abs(sampledRTT - estimatedRTT) );
+        }
+        timeout = estimatedRTT + 4*devRTT;
+
+        super.tallyRTT(sampledRTT);
         super.tallyTimeout(timeout);
 
         switch (state) {
@@ -148,11 +180,11 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
                     this.window.clear();
                     state = State.FINISHING;
 
-                } else if (ack.cSeqN >= window.getFirst().id) {
+                } else if (ack.cSeqN >= window.getFirst().id) { // If ack id greater than or equal to the expected id, remove the packets.
                     while (!window.isEmpty() && (window.getFirst().id <= ack.cSeqN || window.getFirst().acknowledged))
                         window.poll();
 
-                } else if (windowContains(ack.packetID) && !ack.outsideWindow) {
+                } else if (windowContains(ack.packetID) && !ack.outsideWindow) { // Only accept packets that are inside the receiver window
                     PacketProxy packetProxy = getPacket(ack.packetID);
                     packetProxy.acknowledged = true;
                 }
@@ -171,12 +203,24 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
         }
     }
 
+    /**
+     * Gets a packet from the window with the given ID
+     *
+     * @param packetID The packet id
+     * @return A PacketProxy object
+     */
     private PacketProxy getPacket(int packetID) {
         PacketProxy first = window.getFirst();
         int x = packetID - first.id;
         return window.get(x);
     }
 
+    /**
+     * Checks if a packet with the given ID exists inside the window.
+     *
+     * @param packetID The packet id
+     * @return True if packet exists, False otherwise.
+     */
     private boolean windowContains(int packetID) {
         PacketProxy last = window.getLast();
         PacketProxy first = window.getFirst();

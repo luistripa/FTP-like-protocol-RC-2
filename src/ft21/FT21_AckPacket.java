@@ -31,9 +31,9 @@ public class FT21_AckPacket extends FT21Packet {
 
 	public String toString() {
 		if (this.packetID == 0)
-			return String.format("ACK<%d>", cSeqN);
+			return String.format("ACK<%d - outside: %b>", cSeqN, outsideWindow);
 		else
-			return String.format("ACK<%d - %d>", cSeqN, packetID);
+			return String.format("ACK<%d - pID: %d - time: %d - outside: %b>", cSeqN, packetID, time, outsideWindow);
 	}
 	
 }
