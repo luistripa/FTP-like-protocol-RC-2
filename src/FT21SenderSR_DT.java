@@ -57,7 +57,7 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     private int maxWindowSize;
     private int timeout;
     private int estimatedRTT;
-    private int devRTT = 0;
+    private int devRTT;
 
     private State state;
     private LinkedList<PacketProxy> window;
@@ -65,6 +65,7 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
     public FT21SenderSR_DT() {
         super(true, "FT21SenderSR_DT");
         this.timeout = DEFAULT_TIMEOUT;
+        this.devRTT = DEFAULT_RTT_VARIATION;
     }
 
     public int initialise(int now, int node_id, Node nodeObj, String[] args) {
@@ -99,8 +100,6 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
                 sendNextPacket(now);
             }
         }
-        if (now > 3000 && false)
-            System.out.println("yau");
     }
 
     public void on_timeout(int now, PacketProxy p) {
@@ -155,15 +154,13 @@ public class FT21SenderSR_DT extends FT21AbstractSenderApplication {
         super.logPacket(now, ack);
         int sampledRTT = now - ack.time;
 
-
         // Algorith given by professors in class T22
         if (estimatedRTT == 0) { // Use default values on first packet
             estimatedRTT = sampledRTT;
-            devRTT = DEFAULT_RTT_VARIATION;
         } else {
             estimatedRTT = (int) (estimatedRTT*(1-ALPHA) + ALPHA*sampledRTT);
-            devRTT = (int) ( (1-BETA)*devRTT + BETA*Math.abs(sampledRTT - estimatedRTT) );
         }
+        devRTT = (int) ( (1-BETA)*devRTT + BETA*Math.abs(sampledRTT - estimatedRTT) );
         timeout = estimatedRTT + 4*devRTT;
 
         super.tallyRTT(sampledRTT);

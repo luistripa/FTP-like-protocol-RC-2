@@ -125,6 +125,8 @@ public class FT21SenderGBN extends FT21AbstractSenderApplication {
     @Override
     public void on_receive_ack(int now, int client, FT21_AckPacket ack) {
         super.logPacket(now, ack);
+        super.tallyTimeout(TIMEOUT);
+
         switch (state) {
             case BEGINNING:
                 state = State.UPLOADING;
