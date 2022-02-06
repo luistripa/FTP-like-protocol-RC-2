@@ -4,7 +4,7 @@ This project was programmed for the second assignment of the 2021 Redes de Compu
 
 We were assigned a task to transfer a file using several methods of FTP-like packet transfering including GoBackN, Selective Repeat and one of the previous with adaptive timeouts based on the packet RTT and jitter.
 
-The underlying simulator, that handles the packet transport, was created by professor José Legatheaux and can be found [here](https://github.com/jlegatheaux/cnss)
+The underlying simulator, that handles the packet transport and network creation, was created by professor José Legatheaux and can be found [here](https://github.com/jlegatheaux/cnss)
 
 # Config File Structure
 
